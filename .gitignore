@@ -1,0 +1,14 @@
+target/
+*.class
+*.log
+
+.env
+
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+.DS_Store
