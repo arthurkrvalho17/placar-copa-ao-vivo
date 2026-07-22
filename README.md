@@ -1,5 +1,7 @@
 # Placar Copa
 
+<img width="1313" height="875" alt="image" src="https://github.com/user-attachments/assets/5ae6a2fd-8e70-4ac7-bf89-a7999b0731d9" />
+
 API de placar de jogos de futebol em tempo real, construída em torno de **event sourcing** e **CQRS**: cada acontecimento de uma partida (início, gol, cartão, fim de jogo...) é tratado como um evento imutável, publicado no Kafka e projetado em diferentes modelos de leitura otimizados para cada consumidor — estatísticas históricas em PostgreSQL e placar instantâneo em Redis, empurrado ao frontend via SSE.
 
 > Projeto de estudo/portfólio inspirado no problema de escala de sistemas como o placar ao vivo de uma Copa do Mundo.
