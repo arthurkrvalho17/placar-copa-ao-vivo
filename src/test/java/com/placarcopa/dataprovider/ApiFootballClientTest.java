@@ -67,6 +67,16 @@ class ApiFootballClientTest {
     }
 
     @Test
+    void deveDistinguirCotaEsgotadaDeOutrosErros() {
+        server.expect(requestTo(BASE_URL + "/fixtures?live=all"))
+                .andRespond(withSuccess(ERRO_COTA_ESGOTADA_JSON, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.buscarJogosAoVivo())
+                .isInstanceOf(ApiFootballQuotaExhaustedException.class)
+                .hasMessageContaining("request limit");
+    }
+
+    @Test
     void deveLancarExcecaoQuandoHttpFalha() {
         server.expect(requestTo(BASE_URL + "/fixtures?live=all"))
                 .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
@@ -137,6 +147,18 @@ class ApiFootballClientTest {
               "get": "fixtures",
               "parameters": {"live": "all"},
               "errors": {"token": "Error/Missing application key."},
+              "results": 0,
+              "paging": {"current": 1, "total": 1},
+              "response": []
+            }
+            """;
+
+    // Formato real observado na cota do plano Free ao esgotar (sem autenticação envolvida)
+    private static final String ERRO_COTA_ESGOTADA_JSON = """
+            {
+              "get": "fixtures",
+              "parameters": {"live": "all"},
+              "errors": {"requests": "You have reached the request limit for the day, Go to https://dashboard.api-football.com to upgrade your plan."},
               "results": 0,
               "paging": {"current": 1, "total": 1},
               "response": []

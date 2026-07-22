@@ -19,6 +19,6 @@ public class MatchEventRelay {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void aoCriarEventoDePartida(EventoPartidaCriado criado) {
-        publisher.publicar(MatchEventMessage.de(criado.evento()));
+        publisher.publicar(MatchEventMessage.de(criado.evento()), criado.evento().getId());
     }
 }

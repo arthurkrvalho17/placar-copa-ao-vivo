@@ -8,11 +8,20 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 /**
  * Mantém as conexões SSE dos clientes do frontend e retransmite cada
- * atualização de placar recebida via Redis pub/sub.
+ * atualização recebida via Redis pub/sub.
+ *
+ * Cada assinante tem sua própria fila de envio (thread virtual): o envio SSE é
+ * I/O bloqueante, e sem isso um cliente lento travaria a thread única do
+ * dispatcher do Redis e congelaria o tempo real de todos os outros.
  */
 @Service
 public class PlacarStreamService {
@@ -20,34 +29,76 @@ public class PlacarStreamService {
     private static final Logger log = LoggerFactory.getLogger(PlacarStreamService.class);
     private static final long SEM_TIMEOUT = 0L;
 
-    private final List<SseEmitter> inscritos = new CopyOnWriteArrayList<>();
+    private final Map<SseEmitter, ExecutorService> inscritos = new ConcurrentHashMap<>();
 
-    public SseEmitter inscrever(List<PlacarAoVivo> snapshotInicial) {
+    /**
+     * Registra o assinante ANTES de tirar o snapshot: atualizações que chegarem
+     * no meio entram na fila atrás do snapshot — nada se perde.
+     */
+    public SseEmitter inscrever(Supplier<List<PlacarAoVivo>> snapshot) {
         SseEmitter emitter = new SseEmitter(SEM_TIMEOUT);
-        inscritos.add(emitter);
-        Runnable remover = () -> inscritos.remove(emitter);
+        ExecutorService fila = Executors.newSingleThreadExecutor(
+                Thread.ofVirtual().name("sse-placar-", 0).factory());
+        inscritos.put(emitter, fila);
+
+        Runnable remover = () -> remover(emitter);
         emitter.onCompletion(remover);
         emitter.onTimeout(remover);
-        emitter.onError(e -> remover.run());
+        emitter.onError(e -> remover(emitter));
 
-        for (PlacarAoVivo placar : snapshotInicial) {
-            if (!enviar(emitter, placar)) {
-                break;
+        executarNaFila(emitter, fila, () -> {
+            try {
+                for (PlacarAoVivo placar : snapshot.get()) {
+                    if (!enviar(emitter, placar)) {
+                        remover(emitter);
+                        return;
+                    }
+                }
+            } catch (RuntimeException e) {
+                // Snapshot falhou (ex.: Redis fora): encerra com erro para o
+                // EventSource do cliente reconectar, em vez de pendurar o stream
+                log.warn("Falha no snapshot inicial de um assinante SSE: {}", e.getMessage());
+                remover(emitter);
+                try {
+                    emitter.completeWithError(e);
+                } catch (RuntimeException ignorada) {
+                    // emitter já finalizado pelo container
+                }
             }
-        }
+        });
         return emitter;
     }
 
     public void transmitir(PlacarAoVivo placar) {
-        for (SseEmitter emitter : inscritos) {
+        inscritos.forEach((emitter, fila) -> executarNaFila(emitter, fila, () -> {
             if (!enviar(emitter, placar)) {
-                inscritos.remove(emitter);
+                remover(emitter);
             }
+        }));
+    }
+
+    /**
+     * Um assinante pode ser removido (e sua fila desligada) entre o forEach e o
+     * execute — a rejeição não pode derrubar a entrega aos demais assinantes
+     * nem vazar para a thread do dispatcher do Redis.
+     */
+    private void executarNaFila(SseEmitter emitter, ExecutorService fila, Runnable tarefa) {
+        try {
+            fila.execute(tarefa);
+        } catch (RejectedExecutionException e) {
+            remover(emitter);
         }
     }
 
     public int inscritosAtivos() {
         return inscritos.size();
+    }
+
+    private void remover(SseEmitter emitter) {
+        ExecutorService fila = inscritos.remove(emitter);
+        if (fila != null) {
+            fila.shutdown();
+        }
     }
 
     private boolean enviar(SseEmitter emitter, PlacarAoVivo placar) {

@@ -266,6 +266,31 @@
   footer.foot{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);
     font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);text-align:center;letter-spacing:.04em}
   footer.foot code{color:var(--ink-dim)}
+
+  /* ---------- Quota / staleness ---------- */
+  .quota-banner{
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:20px;padding:12px 16px;
+    border:1px solid var(--gold-soft);border-radius:12px;
+    background:var(--gold-soft);color:var(--gold);
+    font-family:var(--font-mono);font-size:12.5px;letter-spacing:.01em;
+  }
+  .quota-banner[hidden]{display:none}
+  .quota-banner .qb-icon{font-size:15px;line-height:1}
+
+  .freshness{
+    font-family:var(--font-mono);font-size:10px;letter-spacing:.03em;
+    color:var(--ink-faint);
+  }
+  .freshness.warn{color:var(--red)}
+  .match.stale{border-color:rgba(255,91,87,.35)}
+  .match.stale:hover{border-color:rgba(255,91,87,.55)}
+  .detail-card.stale{border-color:rgba(255,91,87,.45)}
+  .freshness-line{
+    font-family:var(--font-mono);font-size:10.5px;color:var(--red);
+    text-align:center;padding:0 22px 10px;
+  }
+  .freshness-line:empty{display:none}
 </style>
 </head>
 <body>
@@ -273,6 +298,11 @@
 <div class="grain"></div>
 
 <div class="shell">
+  <div class="quota-banner" id="quotaBanner" hidden>
+    <span class="qb-icon">⏳</span>
+    <span id="quotaBannerText">Cota diária da API atingida — os placares podem não estar atualizando.</span>
+  </div>
+
   <header class="top">
     <div class="brand">
       <span class="kicker">World Cup 2026 · Tempo Real</span>
@@ -320,6 +350,12 @@
   const API_BASE = "";
   const STREAM_URL = API_BASE + "/api/placares/stream";
   const STATS_URL  = (m) => API_BASE + "/api/estatisticas/" + encodeURIComponent(m);
+  const INGESTAO_STATUS_URL = API_BASE + "/api/ingestao/status";
+
+  // Uma partida "ao vivo" sem novo evento por tanto tempo provavelmente parou
+  // de ser alimentada (ex.: cota do provider esgotada) — o placar exibido não
+  // reflete mais o jogo real, então isso precisa ficar visível.
+  const STALE_MS = 3 * 60 * 1000;
 
   // ---- State ----
   const matches = new Map();      // match -> PlacarAoVivo
@@ -354,6 +390,78 @@
   const initials = (name="") => name.trim().slice(0,3).toUpperCase() || "?";
   const esc = (s="") => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 
+  // ---- Freshness (dados parados, ex.: cota do provider esgotada) ----
+  function isStale(p){
+    if(!p || !isLive(p.status)) return false;
+    // Sem timestamp (placar cacheado antes deste recurso existir) não há como
+    // provar frescor — trata como potencialmente parado em vez de assumir ok.
+    if(!p.atualizadoEm) return true;
+    return (Date.now() - new Date(p.atualizadoEm).getTime()) > STALE_MS;
+  }
+  function formatAgo(ms){
+    const s = Math.max(0, Math.floor(ms/1000));
+    if(s < 60) return s + "s";
+    const m = Math.floor(s/60);
+    if(m < 60) return m + "min";
+    const h = Math.floor(m/60);
+    return h + "h" + String(m%60).padStart(2,"0");
+  }
+  function freshnessText(p){
+    if(!isStale(p)) return "";
+    if(!p.atualizadoEm) return "sem horário de atualização confirmado";
+    return "sem atualização há " + formatAgo(Date.now() - new Date(p.atualizadoEm).getTime());
+  }
+  // Recalcula "há quanto tempo" e o estado stale sem re-renderizar os cards
+  // inteiros (evitaria repetir a animação de entrada a cada tick).
+  function atualizarFrescor(){
+    listEl.querySelectorAll(".match").forEach(btn => {
+      const p = matches.get(btn.dataset.match);
+      if(!p) return;
+      const stale = isStale(p);
+      btn.classList.toggle("stale", stale);
+      const fEl = btn.querySelector('[data-role="freshness"]');
+      if(fEl){
+        fEl.textContent = freshnessText(p);
+        fEl.classList.toggle("warn", stale);
+      }
+    });
+    if(selected){
+      const p = matches.get(selected);
+      const card = document.getElementById("detailCard");
+      const fEl = document.querySelector('#detail [data-role="freshness"]');
+      if(p && card && fEl){
+        const stale = isStale(p);
+        card.classList.toggle("stale", stale);
+        fEl.textContent = freshnessText(p);
+      }
+    }
+  }
+
+  // ---- Status da ingestão (cota do provider) ----
+  const quotaBanner = document.getElementById("quotaBanner");
+  const quotaBannerText = document.getElementById("quotaBannerText");
+  function formatQuando(iso){
+    const alvo = new Date(iso);
+    const diffMin = Math.round((alvo.getTime() - Date.now())/60000);
+    if(diffMin <= 0) return "a qualquer momento";
+    if(diffMin < 60) return "em cerca de " + diffMin + "min";
+    return "às " + alvo.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
+  }
+  async function pollStatusIngestao(){
+    try{
+      const res = await fetch(INGESTAO_STATUS_URL, {headers:{Accept:"application/json"}});
+      if(!res.ok) return;
+      const s = await res.json();
+      if(s.cotaEsgotada){
+        quotaBannerText.textContent = "Cota diária da API-Football atingida — os placares podem não estar atualizando. "
+          + (s.proximaTentativaEm ? "Próxima tentativa " + formatQuando(s.proximaTentativaEm) + "." : "");
+        quotaBanner.hidden = false;
+      } else {
+        quotaBanner.hidden = true;
+      }
+    }catch(_){ /* mantém o último estado conhecido do banner */ }
+  }
+
   // ---- Connection indicator ----
   const connEl = document.getElementById("conn");
   const connLabel = document.getElementById("connLabel");
@@ -385,6 +493,9 @@
   function onPlacar(p){
     if(!p || !p.match) return;
     const key = p.match;
+    // Snapshot REST atrasado não pode regredir estado mais novo vindo do SSE
+    const atual = matches.get(key);
+    if(atual && atual.ultimaSequence >= p.ultimaSequence) return;
     const prev = prevScore.get(key);
     const now = p.golsTeamA + ":" + p.golsTeamB;
     const goalA = prev && (Number(prev.split(":")[0]) < p.golsTeamA);
@@ -416,8 +527,9 @@
       const sc = statusClass(p.status);
       const bumpA = flash.goalA && flash.changed===p.match ? "bump":"";
       const bumpB = flash.goalB && flash.changed===p.match ? "bump":"";
+      const stale = isStale(p);
       return `
-      <button class="match ${selected===p.match?"selected":""}" data-match="${esc(p.match)}"
+      <button class="match ${selected===p.match?"selected":""} ${stale?"stale":""}" data-match="${esc(p.match)}"
               style="animation-delay:${Math.min(i*50,400)}ms">
         <div class="side home">
           <div class="team"><span class="crest">${esc(initials(p.teamA))}</span><span>${esc(p.teamA)}</span></div>
@@ -430,6 +542,7 @@
             <span class="n ${bumpB}">${p.golsTeamB}</span>
           </div>
           <span class="statuschip ${sc}"><span class="ld"></span>${esc(statusText(p))}</span>
+          <span class="freshness ${stale?"warn":""}" data-role="freshness">${freshnessText(p)}</span>
         </div>
         <div class="side away">
           <div class="team"><span class="crest">${esc(initials(p.teamB))}</span><span>${esc(p.teamB)}</span></div>
@@ -462,12 +575,14 @@
     const sc = statusClass(p.status);
     const st = statsCache.get(p.match);
     const bumpA = flash.goalA ? "bump":"", bumpB = flash.goalB ? "bump":"";
+    const stale = isStale(p);
     detailEl.innerHTML = `
-      <div class="detail-card" id="detailCard">
+      <div class="detail-card ${stale?"stale":""}" id="detailCard">
         <div class="dhead">
           <span class="comp">${esc(st?.competitionTitle || "Copa 2026")}${st?.competitionStage? " · "+esc(prettyStage(st.competitionStage)):""}</span>
           <span class="statuschip ${sc}"><span class="ld"></span>${esc(statusText(p))}</span>
         </div>
+        <div class="freshness-line" data-role="freshness">${stale?freshnessText(p):""}</div>
         <div class="dboard">
           <div class="dteam a">
             <div class="crest-lg">${esc(initials(p.teamA))}</div>
@@ -531,7 +646,18 @@
     }catch(_){ statsCache.set(match, null); }
   }
 
+  // Snapshot inicial via REST: preenche a lista (e limpa os skeletons)
+  // mesmo que nenhuma atualização SSE chegue logo de cara.
+  fetch(API_BASE + "/api/placares", {headers:{Accept:"application/json"}})
+    .then(r => r.ok ? r.json() : [])
+    .then(lista => { lista.forEach(onPlacar); if(matches.size === 0) renderList(); })
+    .catch(() => { if(matches.size === 0) renderList(); });
+
   connect();
+
+  pollStatusIngestao();
+  setInterval(pollStatusIngestao, 20000);
+  setInterval(atualizarFrescor, 15000);
 })();
 </script>
 </body>

@@ -17,6 +17,8 @@ public enum TipoEvento {
     GOAL,
     OWN_GOAL,
     PENALTY_GOAL,
+    /** Compensação emitida pela ingestão quando um gol é anulado (VAR) e some da timeline. */
+    GOAL_CANCELLED,
     MISSED_PENALTY,
     YELLOW_CARD,
     RED_CARD,
@@ -26,7 +28,7 @@ public enum TipoEvento {
     /** Ciclo de vida da partida (início, intervalo, fim...) vs. lance de jogo (gol, cartão...). */
     public boolean isCicloDeVida() {
         return switch (this) {
-            case GOAL, OWN_GOAL, PENALTY_GOAL, MISSED_PENALTY,
+            case GOAL, OWN_GOAL, PENALTY_GOAL, GOAL_CANCELLED, MISSED_PENALTY,
                  YELLOW_CARD, RED_CARD, SUBSTITUTION, VAR_DECISION -> false;
             default -> true;
         };

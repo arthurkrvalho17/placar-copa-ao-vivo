@@ -78,49 +78,50 @@ public class EstatisticaPartida {
             return false;
         }
         Object time = mensagem.payload() == null ? null : mensagem.payload().get("team");
-        boolean doTimeA = teamA.equals(time);
-        boolean doTimeB = teamB.equals(time);
+        LadoPartida lado = LadoPartida.de(time, teamA, teamB);
 
         switch (mensagem.event()) {
-            case GOAL, PENALTY_GOAL -> {
-                if (doTimeA) {
+            // Na API-Football o team do evento de gol é sempre o time beneficiado,
+            // inclusive no gol contra (o jogador é do adversário)
+            case GOAL, PENALTY_GOAL, OWN_GOAL -> {
+                if (lado == LadoPartida.A) {
                     golsTeamA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     golsTeamB++;
                 }
             }
-            case OWN_GOAL -> {
-                if (doTimeA) {
-                    golsTeamB++;
-                } else if (doTimeB) {
-                    golsTeamA++;
+            case GOAL_CANCELLED -> {
+                if (lado == LadoPartida.A) {
+                    golsTeamA = Math.max(0, golsTeamA - 1);
+                } else if (lado == LadoPartida.B) {
+                    golsTeamB = Math.max(0, golsTeamB - 1);
                 }
             }
             case MISSED_PENALTY -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     penaltisPerdidosTeamA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     penaltisPerdidosTeamB++;
                 }
             }
             case YELLOW_CARD -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     cartoesAmarelosTeamA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     cartoesAmarelosTeamB++;
                 }
             }
             case RED_CARD -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     cartoesVermelhosTeamA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     cartoesVermelhosTeamB++;
                 }
             }
             case SUBSTITUTION -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     substituicoesTeamA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     substituicoesTeamB++;
                 }
             }

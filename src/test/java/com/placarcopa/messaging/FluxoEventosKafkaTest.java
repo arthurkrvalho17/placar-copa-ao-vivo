@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  * → consumido pelos DOIS consumer groups → banco de estatísticas e projeção
  * de consultas rápidas atualizados de forma independente.
  */
-@SpringBootTest
+@SpringBootTest(properties = "ingestao.agendada.habilitada=false")
 @Testcontainers
 @EmbeddedKafka(partitions = 1, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 class FluxoEventosKafkaTest {

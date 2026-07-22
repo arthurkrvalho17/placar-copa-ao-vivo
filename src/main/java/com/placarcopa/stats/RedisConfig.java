@@ -1,5 +1,6 @@
 package com.placarcopa.stats;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -15,9 +16,13 @@ public class RedisConfig {
     /** Canal pub/sub em que cada atualização de placar é publicada. */
     public static final String CANAL_ATUALIZACOES = "placares:atualizacoes";
 
+    /**
+     * Reaproveita o ObjectMapper do Spring (já traz o JavaTimeModule que
+     * PlacarAoVivo.atualizadoEm, um Instant, precisa para serializar).
+     */
     @Bean
-    public Jackson2JsonRedisSerializer<PlacarAoVivo> placarSerializer() {
-        return new Jackson2JsonRedisSerializer<>(PlacarAoVivo.class);
+    public Jackson2JsonRedisSerializer<PlacarAoVivo> placarSerializer(ObjectMapper objectMapper) {
+        return new Jackson2JsonRedisSerializer<>(objectMapper, PlacarAoVivo.class);
     }
 
     @Bean

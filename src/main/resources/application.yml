@@ -7,7 +7,6 @@ spring:
       properties:
         spring.json.add.type.headers: false
     consumer:
-      group-id: placar-copa
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
@@ -39,3 +38,9 @@ server:
 api-football:
   base-url: https://v3.football.api-sports.io
   key: ${APIFOOTBALL_KEY:}
+
+ingestao:
+  agendada:
+    habilitada: true
+    intervalo: 60s
+    # ligas: "1,2"  # opcional; vazio = todos os jogos ao vivo

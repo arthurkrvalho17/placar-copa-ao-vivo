@@ -67,6 +67,20 @@ public class ApiFootballClient {
         return buscarFixtures(uri -> uri.path("/fixtures").queryParam("id", fixtureId).build());
     }
 
+    /**
+     * Vários jogos pelo id, em lotes de até 20 (limite da API). Usado para
+     * reconciliar partidas que saíram do feed ao vivo sem desfecho conhecido.
+     */
+    public List<FixtureResponse> buscarJogosPorIds(List<Long> fixtureIds) {
+        List<FixtureResponse> resultado = new java.util.ArrayList<>();
+        for (int i = 0; i < fixtureIds.size(); i += 20) {
+            List<Long> lote = fixtureIds.subList(i, Math.min(i + 20, fixtureIds.size()));
+            String ids = lote.stream().map(String::valueOf).collect(Collectors.joining("-"));
+            resultado.addAll(buscarFixtures(uri -> uri.path("/fixtures").queryParam("ids", ids).build()));
+        }
+        return resultado;
+    }
+
     /** Linha do tempo de eventos de um jogo (gols, cartões, substituições, VAR). */
     public List<MatchEvent> buscarEventos(long fixtureId) {
         return executar(
@@ -98,10 +112,20 @@ public class ApiFootballClient {
             throw new ApiFootballException("Falha ao chamar a API-Football: " + e.getMessage(), e);
         }
 
+        // 204 No Content (documentado pela API) e corpo vazio significam "sem
+        // resultados" — não pode virar exceção, senão o poll com feed vazio
+        // aborta e a reconciliação de partidas encerradas nunca roda. Fica o
+        // aviso: um feed vazio espúrio alimenta a reconciliação como se todas
+        // as partidas abertas tivessem saído do ar.
         if (body == null) {
-            throw new ApiFootballException("API-Football retornou resposta vazia");
+            log.warn("API-Football devolveu corpo vazio; tratando como zero resultados");
+            return List.of();
         }
         if (body.temErros()) {
+            if (body.errors().has("requests")) {
+                throw new ApiFootballQuotaExhaustedException(
+                        "Cota da API-Football esgotada: " + body.errors().get("requests").asText());
+            }
             throw new ApiFootballException("API-Football retornou erros: " + body.descricaoErros());
         }
         return body.response() == null ? List.of() : body.response();

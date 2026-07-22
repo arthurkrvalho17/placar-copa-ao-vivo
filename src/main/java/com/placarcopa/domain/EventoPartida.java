@@ -66,6 +66,10 @@ public class EventoPartida {
     @Column(nullable = false)
     private Long apiFixtureId;
 
+    /** Marcado quando a publicação no Kafka é confirmada; o republicador reenvia os pendentes. */
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    private boolean publicado = false;
+
     @Column(nullable = false)
     private Instant criadoEm = Instant.now();
 
@@ -130,6 +134,10 @@ public class EventoPartida {
 
     public Long getApiFixtureId() {
         return apiFixtureId;
+    }
+
+    public boolean isPublicado() {
+        return publicado;
     }
 
     public Instant getCriadoEm() {

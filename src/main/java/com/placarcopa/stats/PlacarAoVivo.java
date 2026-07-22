@@ -1,10 +1,17 @@
 package com.placarcopa.stats;
 
+import com.placarcopa.domain.LadoPartida;
 import com.placarcopa.messaging.MatchEventMessage;
+
+import java.time.Instant;
 
 /**
  * Estado de consulta rápida de uma partida (placar, cartões, status),
  * derivado exclusivamente da sequência de eventos. Armazenado no Redis.
+ *
+ * {@code atualizadoEm} existe para o frontend detectar dados parados (ex.:
+ * cota do provider esgotada): sem ele, uma partida cujo último evento veio há
+ * horas parece tão "ao vivo" quanto uma atualizada agora mesmo.
  */
 public record PlacarAoVivo(
         String match,
@@ -18,12 +25,13 @@ public record PlacarAoVivo(
         int cartoesVermelhosTeamB,
         String status,
         String minute,
-        int ultimaSequence
+        int ultimaSequence,
+        Instant atualizadoEm
 ) {
 
     public static PlacarAoVivo inicial(MatchEventMessage mensagem) {
         return new PlacarAoVivo(mensagem.match(), mensagem.teamA(), mensagem.teamB(),
-                0, 0, 0, 0, 0, 0, null, null, 0);
+                0, 0, 0, 0, 0, 0, null, null, 0, Instant.now());
     }
 
     /**
@@ -43,35 +51,36 @@ public record PlacarAoVivo(
         int vermelhosB = cartoesVermelhosTeamB;
 
         Object time = mensagem.payload() == null ? null : mensagem.payload().get("team");
-        boolean doTimeA = teamA.equals(time);
-        boolean doTimeB = teamB.equals(time);
+        LadoPartida lado = LadoPartida.de(time, teamA, teamB);
 
         switch (mensagem.event()) {
-            case GOAL, PENALTY_GOAL -> {
-                if (doTimeA) {
+            // Na API-Football o team do evento de gol é sempre o time beneficiado,
+            // inclusive no gol contra (o jogador é do adversário)
+            case GOAL, PENALTY_GOAL, OWN_GOAL -> {
+                if (lado == LadoPartida.A) {
                     golsA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     golsB++;
                 }
             }
-            case OWN_GOAL -> {
-                if (doTimeA) {
-                    golsB++;
-                } else if (doTimeB) {
-                    golsA++;
+            case GOAL_CANCELLED -> {
+                if (lado == LadoPartida.A) {
+                    golsA = Math.max(0, golsA - 1);
+                } else if (lado == LadoPartida.B) {
+                    golsB = Math.max(0, golsB - 1);
                 }
             }
             case YELLOW_CARD -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     amarelosA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     amarelosB++;
                 }
             }
             case RED_CARD -> {
-                if (doTimeA) {
+                if (lado == LadoPartida.A) {
                     vermelhosA++;
-                } else if (doTimeB) {
+                } else if (lado == LadoPartida.B) {
                     vermelhosB++;
                 }
             }
@@ -84,6 +93,6 @@ public record PlacarAoVivo(
         String novoMinuto = mensagem.minute() == null ? minute : mensagem.minute();
         return new PlacarAoVivo(match, teamA, teamB,
                 golsA, golsB, amarelosA, amarelosB, vermelhosA, vermelhosB,
-                novoStatus, novoMinuto, mensagem.sequence());
+                novoStatus, novoMinuto, mensagem.sequence(), Instant.now());
     }
 }

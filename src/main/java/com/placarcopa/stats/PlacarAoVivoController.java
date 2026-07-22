@@ -41,6 +41,6 @@ public class PlacarAoVivoController {
      */
     @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream() {
-        return streamService.inscrever(service.listar());
+        return streamService.inscrever(service::listar);
     }
 }

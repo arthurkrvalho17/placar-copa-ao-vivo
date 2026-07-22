@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     networks:
       - placarcopa-network
     container_name: placarcopa-db
@@ -15,6 +16,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:latest
+    restart: unless-stopped
     networks:
       - placarcopa-network
     container_name: placarcopa-kafka
@@ -41,6 +43,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     networks:
       - placarcopa-network
     container_name: placarcopa-redis
@@ -49,6 +52,7 @@ services:
 
   kafdrop:
     image: obsidiandynamics/kafdrop:latest
+    restart: unless-stopped
     networks:
       - placarcopa-network
     depends_on:
